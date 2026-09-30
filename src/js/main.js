@@ -1,0 +1,2 @@
+/* Uygulamayı başlat */
+home();
