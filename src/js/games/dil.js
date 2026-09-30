@@ -14,7 +14,7 @@ def({id:'yanlisyazim',cat:'dil',gl:'✎',name:'Yazım Dedektifi',mode:'quiz',pts
 
 def({id:'esanlam',cat:'dil',gl:'=',name:'Eş Anlam',mode:'quiz',
   desc:'Kelimeyle aynı anlama gelen kelimeyi seç.',
-  gen(){const p=pick(SYN);const [a,b]=Math.random()<.5?p:[p[1],p[0]];const pool=SYN.filter(x=>x!==p&&!x.includes(a)&&!x.includes(b)).flat();return Object.assign(mk(b,sample(pool,3)),{q:`<div class="qbig">${a}</div><div class="qsmall">eş anlamlısı?</div>`,txt:true})}});
+  gen(){const p=pick(SYN);const [a,b]=Math.random()<.5?p:[p[1],p[0]];const pool=[...new Set(SYN.filter(x=>x!==p&&!x.includes(a)&&!x.includes(b)).flat())];return Object.assign(mk(b,sample(pool,3)),{q:`<div class="qbig">${a}</div><div class="qsmall">eş anlamlısı?</div>`,txt:true})}});
 
 def({id:'eksikharf',cat:'dil',gl:'K_T',name:'Eksik Harf',mode:'quiz',time:40,
   desc:'Kelimeden bir harf düşmüş. Boşluğa gelecek harfi seç.',

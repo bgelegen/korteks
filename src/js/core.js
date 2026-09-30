@@ -1,16 +1,28 @@
-/* KORTEKS — çekirdek: yardımcılar, kayıt, ana sayfa, oyun motorları */
+/* KORTEKS — çekirdek: durum, yardımcılar, oyun kaydı ve oyun motorları */
 'use strict';
 const $=s=>document.querySelector(s);
 const $$=s=>[...document.querySelectorAll(s)];
 const app=$('#app');
 const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const VERSION='1.1.0';
+
+/* ---------- kalıcı durum ---------- */
 const store={
   get(){try{return JSON.parse(localStorage.getItem('korteks-v1'))||null}catch(e){return null}},
   set(v){try{localStorage.setItem('korteks-v1',JSON.stringify(v))}catch(e){}}
 };
-let data=store.get()||{best:{},history:[],days:[],played:{}};
-data.played=data.played||{};
-const buzz=ms=>{try{navigator.vibrate&&navigator.vibrate(ms)}catch(e){}};
+const DEFAULTS=()=>({best:{},history:[],days:[],played:{},settings:{sound:true,vibrate:true},profile:{name:''},onboarded:false});
+let data=Object.assign(DEFAULTS(),store.get()||{});
+data.settings=Object.assign({sound:true,vibrate:true},data.settings);
+data.profile=Object.assign({name:''},data.profile);
+const save=()=>store.set(data);
+
+/* ---------- geri bildirim: titreşim ve ses ---------- */
+const buzz=ms=>{if(!data.settings.vibrate)return;try{navigator.vibrate&&navigator.vibrate(ms)}catch(e){}};
+let actx=null;
+function tone(f,d,type,vol,delay){if(!data.settings.sound)return;try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();const t=actx.currentTime+(delay||0);const o=actx.createOscillator(),g=actx.createGain();o.type=type||'sine';o.frequency.setValueAtTime(f,t);g.gain.setValueAtTime(vol||.07,t);g.gain.exponentialRampToValueAtTime(.0001,t+d);o.connect(g).connect(actx.destination);o.start(t);o.stop(t+d+.02)}catch(e){}}
+const sfx={ok(){tone(740,.09,'sine',.06);tone(1110,.12,'sine',.05,.06)},no(){tone(170,.2,'triangle',.08)},tap(){tone(520,.04,'sine',.03)},
+  win(){[523,659,784,1047].forEach((f,i)=>tone(f,.22,'triangle',.06,i*.09))},tick(){tone(440,.06,'sine',.05)},go(){tone(880,.15,'sine',.06)}};
 
 /* ---------- helpers ---------- */
 const ri=(a,b)=>a+Math.floor(Math.random()*(b-a+1));
@@ -61,109 +73,78 @@ function confetti(){
     if(t<180)requestAnimationFrame(f);else x.clearRect(0,0,c.width,c.height)})();
 }
 
-/* ---------- registry ---------- */
+/* ---------- kategoriler ve oyun kaydı ---------- */
+const ICON={
+  hafiza:'<rect x="3" y="7" width="13" height="14" rx="2.5"/><path d="M8 3.5h10.5A2.5 2.5 0 0 1 21 6v11"/>',
+  dikkat:'<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3.2"/>',
+  hiz:'<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+  esneklik:'<path d="M4 8h14l-3.5-3.5M20 16H6l3.5 3.5"/>',
+  mantik:'<circle cx="6" cy="6" r="2.6"/><circle cx="18" cy="6" r="2.6"/><circle cx="12" cy="18" r="2.6"/><path d="M7.4 8.3l3.4 7.3M16.6 8.3l-3.4 7.3M8.6 6h6.8"/>',
+  sayi:'<path d="M5 9h15M4 15h15M10 3.5L8 20.5M16 3.5l-2 17"/>',
+  dil:'<path d="M4 4.5h16v11.5H10l-6 4.5z"/><path d="M8 8.5h8M8 12h5"/>',
+  uzam:'<path d="M12 2.5l8.5 4.8v9.4L12 21.5l-8.5-4.8V7.3z"/><path d="M3.5 7.3L12 12l8.5-4.7M12 12v9.5"/>'
+};
+const icon=(k,s)=>`<svg viewBox="0 0 24 24" width="${s||24}" height="${s||24}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg>`;
 const CATS={
-  hafiza:{n:'Hafıza',h:'#22D3EE'},dikkat:{n:'Dikkat',h:'#A3E635'},hiz:{n:'Hız',h:'#FB923C'},esneklik:{n:'Esneklik',h:'#F472B6'},
-  mantik:{n:'Mantık',h:'#FBBF24'},sayi:{n:'Sayılar',h:'#B08CFF'},dil:{n:'Dil',h:'#60A5FA'},uzam:{n:'Uzamsal',h:'#34D399'}};
+  hafiza:{n:'Hafıza',h:'#22D3EE',about:'Bilgiyi kısa süre aklında tutma ve doğru sırayla geri çağırma.'},
+  dikkat:{n:'Dikkat',h:'#A3E635',about:'Kalabalığın içinde önemli olanı fark etme ve odağı koruma.'},
+  hiz:{n:'Hız',h:'#FB923C',about:'Gördüğünü hızla işleme ve anında tepki verme.'},
+  esneklik:{n:'Esneklik',h:'#F472B6',about:'Kurallar değiştiğinde düşünme biçimini hızla uyarlama.'},
+  mantik:{n:'Mantık',h:'#FBBF24',about:'Örüntüleri çözme ve ipuçlarından sonuç çıkarma.'},
+  sayi:{n:'Sayılar',h:'#B08CFF',about:'Kafadan hesap, tahmin ve sayı duygusu.'},
+  dil:{n:'Dil',h:'#60A5FA',about:'Kelime bilgisi, yazım ve sözel akıcılık.'},
+  uzam:{n:'Uzamsal',h:'#34D399',about:'Şekilleri zihinde döndürme ve yön bulma.'}};
 const ALL=[],GM={};
 function def(g){g.no=ALL.length+1;ALL.push(g);GM[g.id]=g}
+const gamesOf=cat=>ALL.filter(g=>g.cat===cat);
+const shortOf=g=>g.desc.split(/(?<=[.!?])\s/)[0];
 const parOf=g=>g.par||(g.mode==='rounds'?1200:2200);
 function pct(id){const g=GM[id];return Math.min(100,Math.round(((data.best[id]||0)/parOf(g))*100))}
-function catPct(cat){const gs=ALL.filter(g=>g.cat===cat);return Math.max(0,...gs.map(g=>pct(g.id)))}
+function catPct(cat){return Math.max(0,...gamesOf(cat).map(g=>pct(g.id)))}
+function catPlayed(cat){return gamesOf(cat).filter(g=>data.best[g.id]).length}
 function index(){const cs=Object.keys(CATS);return Math.round(cs.reduce((s,c)=>s+catPct(c),0)/cs.length*10)}
-function rank(s){return s>=800?'Dahi':s>=600?'Usta':s>=400?'Keskin':s>=150?'Gelişiyor':'Çaylak'}
+const RANKS=[[800,'Dahi'],[600,'Usta'],[400,'Keskin'],[150,'Gelişiyor'],[0,'Çaylak']];
+function rank(s){return RANKS.find(r=>s>=r[0])[1]}
+function nextRank(s){const i=RANKS.findIndex(r=>s>=r[0]);return i>0?RANKS[i-1]:null}
 function key(d){return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()}
 function today(){return key(new Date())}
 function streak(){const set=new Set(data.days);let n=0;const d=new Date();if(!set.has(today()))d.setDate(d.getDate()-1);while(set.has(key(d))){n++;d.setDate(d.getDate()-1)}return n}
 function dailyPicks(){let s=0;for(const ch of today())s=(s*31+ch.charCodeAt(0))>>>0;const rnd=()=>{s=(s*1664525+1013904223)>>>0;return s/4294967296};
-  const cats=Object.keys(CATS).sort(()=>rnd()-.5).slice(0,5);return cats.map(c=>{const gs=ALL.filter(g=>g.cat===c);return gs[Math.floor(rnd()*gs.length)]})}
+  const cats=Object.keys(CATS).sort(()=>rnd()-.5).slice(0,5);return cats.map(c=>{const gs=gamesOf(c);return gs[Math.floor(rnd()*gs.length)]})}
+const playedToday=()=>data.played[today()]||[];
 function countUp(el,to,ms){if(!el)return;if(reduce||!to){el.textContent=to;return}const t0=performance.now();(function f(n){const k=Math.min(1,(n-t0)/ms),e=1-Math.pow(1-k,3);el.textContent=Math.round(to*e);if(k<1)requestAnimationFrame(f)})(t0)}
+const go=h=>{if(location.hash===h)window.dispatchEvent(new HashChangeEvent('hashchange'));else location.hash=h};
+let tour=null; /* {list:[id], i} — günün turu oynanırken */
 
 const logoSvg='<svg viewBox="0 0 24 24" fill="none"><path d="M5 7L12 17L19 6M5 7L19 6M12 17V22" stroke="#C9C2FF" stroke-width="1.4" opacity=".8"/><circle cx="5" cy="7" r="2.8" fill="#22D3EE"/><circle cx="19" cy="6" r="2.4" fill="#F472B6"/><circle cx="12" cy="17" r="3.2" fill="#FBBF24"/></svg>';
 const backI='<svg viewBox="0 0 18 18" fill="none"><path d="M11 3L5 9l6 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const chevI='<svg viewBox="0 0 18 18" width="16" height="16" fill="none"><path d="M7 3l6 6-6 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const checkI='<svg viewBox="0 0 12 12" fill="none"><path d="M2 6.5L5 9l5-6" stroke="#07230F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const playI='<svg viewBox="0 0 12 12" width="12" height="12"><path d="M3 1.5v9l7.5-4.5z" fill="currentColor"/></svg>';
 const flame='<svg class="flame" viewBox="0 0 14 18"><defs><linearGradient id="fl" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#F472B6"/><stop offset="1" stop-color="#FBBF24"/></linearGradient></defs><path d="M7 0C8 4 13 6 13 11.5A6 6 0 0 1 1 11.5C1 8.5 3 7 3.5 5 5 7 5.5 8 6 9 7.5 6 7 3 7 0z" fill="url(#fl)"/></svg>';
 
-/* ---------- HOME ---------- */
-let filter='all';
-function home(){
-  stopAll();
-  app.style.removeProperty('--h');
-  const ix=index(),frac1=Math.min(1,ix/1000),R=62,C=2*Math.PI*R;
-  const playedN=Object.keys(data.best).length;
-  let ticks='';for(let i=0;i<40;i++){const a=i/40*Math.PI*2;ticks+=`<line class="tick" x1="${75+Math.cos(a)*73}" y1="${75+Math.sin(a)*73}" x2="${75+Math.cos(a)*(i%5?70:67)}" y2="${75+Math.sin(a)*(i%5?70:67)}"/>`}
-  const daily=dailyPicks(),td=data.played[today()]||[];
-  app.className='app enter';
-  app.innerHTML=`
-  <header class="top">
-    <div class="brand"><div class="logo"><span>${logoSvg}</span></div><div><b>KORTEKS</b><small>50 özgün zihin oyunu</small></div></div>
-    <div class="streak glass">${flame}<span class="num">${streak()}</span> gün</div>
-  </header>
-  <section class="hero glass">
-    <div class="ringwrap">
-      <svg viewBox="0 0 150 150"><defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22D3EE"/><stop offset=".5" stop-color="#8B7CFF"/><stop offset="1" stop-color="#F472B6"/></linearGradient></defs>
-      ${ticks}<circle class="trk" cx="75" cy="75" r="${R}"/><circle class="val" id="ringv" cx="75" cy="75" r="${R}" stroke-dasharray="${C}" stroke-dashoffset="${C}" transform="rotate(-90 75 75)"/></svg>
-      <div class="ringin"><div class="big num" id="bs">0</div><div class="of">/ 1000</div></div>
-    </div>
-    <div class="herotx">
-      <div class="lbl">Korteks Endeksi</div>
-      <span class="lvlpill">${rank(ix)}</span>
-      <p>${playedN?'8 beyin alanındaki en iyi performansının özeti.':'Bir oyun oyna, endeksin burada yükselsin.'}</p>
-      <div class="minis"><span><b>${playedN}</b>/50 oyun</span><span><b>${data.history.length}</b> seans</span></div>
-    </div>
-  </section>
-  <div class="sec"><h2>Günün beyin turu</h2><span>${td.filter(id=>daily.some(g=>g.id===id)).length}/5 tamam</span></div>
-  <div class="daily">${daily.map((g,i)=>`<button class="dcard" data-g="${g.id}" style="--h:${CATS[g.cat].h}">${td.includes(g.id)?`<span class="done">${checkI}</span>`:''}<span class="n">${i+1}. ${tl(CATS[g.cat].n)}</span><span class="gl">${g.gl}</span><h3>${g.name}</h3></button>`).join('')}</div>
-  <div class="cats" id="cats"><button class="cat ${filter==='all'?'on':''}" data-c="all" style="--h:#C9C2FF"><i></i>Tümü · 50</button>${Object.entries(CATS).map(([k,c])=>`<button class="cat ${filter===k?'on':''}" data-c="${k}" style="--h:${c.h}"><i></i>${c.n}</button>`).join('')}</div>
-  <div class="games" id="games"></div>
-  <div class="sec"><h2>Beceri haritası</h2><span>alan başına en iyi</span></div>
-  <div class="skills glass">${Object.entries(CATS).map(([k,c])=>`<div class="bar" style="--h:${c.h}"><span>${c.n}</span><div class="t"><i data-w="${catPct(k)}"></i></div><span class="v">%${catPct(k)}</span></div>`).join('')}</div>
-  <div class="sec"><h2>Son seanslar</h2></div>
-  <div class="hist">${data.history.filter(h=>GM[h.g]).length?data.history.filter(h=>GM[h.g]).slice(0,5).map(h=>`<div class="hrow glass" style="--h:${CATS[GM[h.g].cat].h}"><i class="dot"></i><div class="nm">${GM[h.g].name}<span>${h.d}</span></div><b class="num">${h.s}</b></div>`).join(''):'<div class="empty">Henüz seans yok. İlk skorun burada parlayacak.</div>'}</div>`;
-  drawGames();
-  $$('#cats .cat').forEach(b=>b.onclick=()=>{filter=b.dataset.c;$$('#cats .cat').forEach(x=>x.classList.toggle('on',x===b));drawGames()});
-  $$('.dcard').forEach(b=>b.onclick=()=>intro(b.dataset.g));
-  countUp($('#bs'),ix,1400);
-  requestAnimationFrame(()=>requestAnimationFrame(()=>{const rv=$('#ringv');if(rv)rv.style.strokeDashoffset=C*(1-Math.max(frac1,.004));$$('.bar i').forEach(i=>i.style.width=i.dataset.w+'%')}));
-  window.scrollTo(0,0);
-}
-function drawGames(){
-  const list=ALL.filter(g=>filter==='all'||g.cat===filter);
-  $('#games').innerHTML=list.map(g=>`<button class="gcard" data-g="${g.id}" style="--h:${CATS[g.cat].h}">
-    <div class="row"><span class="gl">${g.gl}</span><span class="no">#${String(g.no).padStart(2,'0')}</span></div>
-    <div><div class="skill">${CATS[g.cat].n}</div><h3>${g.name}</h3></div>
-    <div class="pb"><i style="width:${pct(g.id)}%"></i></div>
-    <div class="best">Rekor <b>${data.best[g.id]||'—'}</b></div></button>`).join('');
-  $$('#games .gcard').forEach(b=>b.onclick=()=>intro(b.dataset.g));
-}
-
-/* ---------- shell ---------- */
+/* ---------- oyun kabuğu ---------- */
 let timers=[],raf=null,moveRaf=null,loops=[];
 function later(fn,ms){const t=setTimeout(fn,ms);timers.push(t);return t}
 function every(fn,ms){const t=setInterval(fn,ms);loops.push(t);return t}
 function stopAll(){timers.forEach(clearTimeout);timers=[];loops.forEach(clearInterval);loops=[];if(raf)cancelAnimationFrame(raf);raf=null;if(moveRaf)cancelAnimationFrame(moveRaf);moveRaf=null}
 function shell(g,chips){
+  document.body.classList.add('ingame');
   app.className='app';
   app.style.setProperty('--h',CATS[g.cat].h);
   app.innerHTML=`
-  <div class="gtop"><button class="back glass" id="back" aria-label="Ana sayfaya dön">${backI}</button><h2>${g.name}</h2>
+  <div class="gtop"><button class="back glass" id="back" aria-label="Geri">${backI}</button><h2>${g.name}${tour&&tour.list[tour.i]===g.id?`<small>Günün turu · ${tour.i+1}/5</small>`:''}</h2>
   <div class="stats">${chips.map(c=>`<div class="chip glass">${c[0]}<b id="${c[1]}">${c[2]}</b></div>`).join('')}</div></div>
   <div class="timer" id="timerwrap"><i id="timer"></i></div>
   <div class="stage" id="stage"></div>`;
-  $('#back').onclick=home;
+  $('#back').onclick=()=>{stopAll();go('#/kategori/'+g.cat)};
   window.scrollTo(0,0);
 }
 function tagsOf(g){if(g.tags)return g.tags;if(g.mode==='rounds')return['3 hak','Seviyeli'];return[(g.time||45)+' sn','Seri çarpanı']}
-function intro(id){
-  stopAll();const g=GM[id];
-  shell(g,[]);$('#timerwrap').hidden=true;
-  $('#stage').innerHTML=`<div class="intro glass enter"><div class="bigg">${g.gl}</div><div><div class="k">${CATS[g.cat].n} · #${String(g.no).padStart(2,'0')}</div><h3>${g.name}</h3></div><p>${g.desc}</p><div class="rules">${tagsOf(g).map(t=>`<span>${t}</span>`).join('')}${data.best[id]?`<span>Rekor ${data.best[id]}</span>`:''}</div><button class="btn" id="go">Başla</button></div>`;
-  $('#go').onclick=()=>start(g);
-}
 function start(g){stopAll();if(g.mode==='quiz')runQuiz(g);else if(g.mode==='rounds')runRounds(g);else g.run(g)}
 function countdown(cb){
   const st=$('#stage');const o=document.createElement('div');o.className='count';st.appendChild(o);
-  let n=3;(function t(){if(n===0){o.remove();cb();return}o.innerHTML=`<span>${n}</span>`;n--;later(t,reduce?300:700)})();
+  let n=3;(function t(){if(n===0){o.remove();sfx.go();cb();return}o.innerHTML=`<span>${n}</span>`;sfx.tick();n--;later(t,reduce?300:700)})();
 }
 function runTimer(sec,onEnd){
   const t0=performance.now(),bar=$('#timer'),wrap=$('#timerwrap');wrap.hidden=false;
@@ -171,6 +152,7 @@ function runTimer(sec,onEnd){
   raf=requestAnimationFrame(tick);
 }
 function fb(ok,txt,pts,anchor){
+  if(ok)sfx.ok();else sfx.no();
   const f=$('#fb');if(f){f.className='feedback '+(ok?'ok':'no');f.textContent=txt||(ok?'Doğru!':'Yanlış');later(()=>{f.textContent=''},600)}
   const st=$('#stage');if(!st)return;
   if(!ok){buzz(60);st.classList.remove('shake');void st.offsetWidth;st.classList.add('shake')}
@@ -182,28 +164,38 @@ const pctStat=(ok,w)=>'%'+(ok+w?Math.round(ok*100/(ok+w)):0);
 function finish(id,score,stats){
   stopAll();
   const prev=data.best[id]||0,isBest=score>prev&&score>0;
+  const ixBefore=index();
   if(isBest)data.best[id]=score;
   const d=new Date();
-  data.history.unshift({g:id,s:score,d:d.toLocaleDateString('tr-TR',{day:'numeric',month:'long'})+' · '+d.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})});
-  data.history=data.history.slice(0,30);
+  data.history.unshift({g:id,s:score,t:Date.now(),d:d.toLocaleDateString('tr-TR',{day:'numeric',month:'long'})+' · '+d.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})});
+  data.history=data.history.slice(0,60);
   if(!data.days.includes(today()))data.days.push(today());
+  data.days=data.days.slice(-120);
   const td=data.played[today()]=data.played[today()]||[];if(!td.includes(id))td.push(id);
   for(const k in data.played)if(k!==today())delete data.played[k];
-  store.set(data);
+  save();
+  const ixAfter=index();
   $('#timerwrap').hidden=true;
-  const g=GM[id],i=ALL.indexOf(g),nx=ALL[(i+1)%ALL.length];
+  const g=GM[id];
+  let nextBtn='';
+  if(tour&&tour.list[tour.i]===id){
+    if(tour.i<tour.list.length-1){const nx=GM[tour.list[tour.i+1]];nextBtn=`<button class="btn" id="nxt">Turda sıradaki: ${nx.name}</button>`}
+    else{nextBtn='';tour.done=true}
+  }else{const gs=gamesOf(g.cat),nx=gs[(gs.indexOf(g)+1)%gs.length];nextBtn=`<button class="btn ghost" id="nxt">Sıradaki: ${nx.name}</button>`}
   $('#stage').innerHTML=`<div class="result glass enter">
-    ${isBest?'<div><span class="badge">Yeni rekor</span></div>':`<div class="prompt">Rekorun: <b class="num">${prev}</b></div>`}
+    ${tour&&tour.done?'<div><span class="badge">Günün turu tamamlandı</span></div>':isBest?'<div><span class="badge">Yeni rekor</span></div>':`<div class="prompt">Rekorun: <b class="num">${prev}</b></div>`}
     <div><div class="lbl">Skor</div><div class="score num" id="fs">0</div></div>
     <div class="rgrid">${stats.map(s=>`<div><b>${s[1]}</b>${s[0]}</div>`).join('')}</div>
-    <button class="btn" id="again">Tekrar oyna</button>
-    <button class="btn ghost" id="nxt">Sıradaki: ${nx.name}</button>
-    <button class="btn ghost" id="home">Ana sayfa</button></div>`;
+    ${ixAfter>ixBefore?`<div class="gain">Korteks Endeksi <b class="num">${ixBefore} → ${ixAfter}</b></div>`:''}
+    ${tour&&!tour.done?nextBtn:''}
+    <button class="btn ${tour&&!tour.done?'ghost':''}" id="again">Tekrar oyna</button>
+    ${tour?'':nextBtn}
+    <button class="btn ghost" id="home">${tour&&tour.done?'Ana sayfaya dön':CATS[g.cat].n+' kategorisine dön'}</button></div>`;
   countUp($('#fs'),score,1000);
-  if(isBest)later(confetti,300);
+  if(isBest||(tour&&tour.done)){later(confetti,300);sfx.win()}
   $('#again').onclick=()=>start(g);
-  $('#nxt').onclick=()=>intro(nx.id);
-  $('#home').onclick=home;
+  const nb=$('#nxt');if(nb)nb.onclick=()=>{if(tour&&!tour.done){tour.i++;go('#/oyun/'+tour.list[tour.i])}else{const gs=gamesOf(g.cat);go('#/oyun/'+gs[(gs.indexOf(g)+1)%gs.length].id)}};
+  $('#home').onclick=()=>{if(tour&&tour.done){tour=null;go('#/')}else{tour=null;go('#/kategori/'+g.cat)}};
 }
 
 /* ---------- QUIZ ENGINE ---------- */

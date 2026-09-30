@@ -1,0 +1,8 @@
+{
+  "appId": "com.bgelegen.korteks",
+  "appName": "KORTEKS",
+  "webDir": "src",
+  "backgroundColor": "#070A1A",
+  "android": { "backgroundColor": "#070A1A" },
+  "ios": { "backgroundColor": "#070A1A", "contentInset": "never" }
+}

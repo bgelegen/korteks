@@ -54,7 +54,29 @@ let failed = 0;
   await page.close();
 }
 
-// 2) Her oyunu başlat ve rastgele oynat
+// 2) Ekranlar arasında gezin
+{
+  const { page, errors } = await open();
+  await page.evaluate(() => localStorage.clear()); await page.reload();
+  await page.waitForSelector('#nx');
+  for (let i = 0; i < 3; i++) await page.click('#nx');
+  await page.fill('#nm', 'Test'); await page.click('#nx');
+  await page.waitForSelector('.catgrid');
+  const checks = [['#/kategori/hafiza', '.glist .grow'], ['#/ilerleme', '.radar'], ['#/ayarlar', '#ssound'], ['#/oyun/zit', '#go'], ['#/', '#tourgo']];
+  for (const [h, sel] of checks) {
+    await page.evaluate((h) => { location.hash = h; }, h);
+    const ok = await page.waitForSelector(sel, { timeout: 3000 }).then(() => true, () => false);
+    if (!ok) { failed++; console.error(`✗ ekran açılmadı: ${h}`); } else console.log(`✓ ekran ${h}`);
+  }
+  const cats = await page.$$eval('.cattile', (a) => a.length);
+  if (cats !== 8) { failed++; console.error(`✗ kategori sayısı ${cats}`); }
+  await page.click('#tourgo');
+  if (!(await page.waitForSelector('#go', { timeout: 3000 }).then(() => true, () => false))) { failed++; console.error('✗ günün turu başlamadı'); }
+  errors.forEach((e) => { failed++; console.error('✗ sayfa hatası:', e); });
+  await page.close();
+}
+
+// 3) Her oyunu başlat ve rastgele oynat
 {
   const { page } = await open();
   const ids = await page.evaluate(() => ALL.map((g) => g.id));

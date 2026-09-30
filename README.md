@@ -1,17 +1,33 @@
 # KORTEKS
 
-**8 beyin alanında 50 özgün zihin oyunu.** Telefon için tasarlanmış, kurulum gerektirmeyen bir web uygulaması.
+<p align="center"><img src="store/feature-graphic.png" alt="KORTEKS" width="640"></p>
+
+**8 beyin alanında 50 özgün zihin oyunu.** Telefon için tasarlanmış, çevrimdışı çalışan ve App Store / Google Play'e gönderilmeye hazır bir uygulama.
+
+🌐 **Canlı sürüm:** https://bgelegen.github.io/korteks/
 
 Hafıza, dikkat, hız, esneklik, mantık, sayılar, dil ve uzamsal düşünme becerilerini kısa oyunlarla çalıştırır. Oyunlar mevcut beyin antrenmanı uygulamalarından bağımsız olarak tasarlanmıştır.
 
+## Ekranlar
+
+<p align="center">
+<img src="store/screenshots/ios/2-ana-sayfa.png" width="180"> <img src="store/screenshots/ios/3-kategori.png" width="180"> <img src="store/screenshots/ios/5-oyun.png" width="180"> <img src="store/screenshots/ios/6-ilerleme.png" width="180">
+</p>
+
 ## Özellikler
 
-- 50 oyun, 8 kategori
+- İlk açılışta karşılama ekranı ve kişiselleştirme
+- 8 kategori sayfası; 50 oyun kategorilerinin içinde
+- Alt sekme çubuğu: Bugün · İlerleme · Ayarlar
 - **Korteks Endeksi** (0–1000) ve seviyeler: Çaylak → Gelişiyor → Keskin → Usta → Dahi
 - Her gün değişen 5 oyunluk **Günün Beyin Turu**
-- Beceri haritası, gün serisi, rekorlar ve seans geçmişi (tarayıcıda saklanır)
+- Gün serisi, rekorlar ve seans geçmişi
 - Seri çarpanı, geri sayım, konfeti ve dokunsal geri bildirim
-- Hiçbir kütüphane veya derleme adımı gerektirmez
+- Beceri haritası (radar grafik) ve son 14 günlük aktivite
+- Ses efektleri ve titreşim (ayarlardan kapatılabilir)
+- İnternetsiz çalışma (servis çalışanı + yerel fontlar), ana ekrana eklenebilir (PWA)
+- Hesap, reklam ve takip yok; tüm veriler cihazda
+- Hiçbir çalışma zamanı kütüphanesi veya derleme adımı gerektirmez
 
 ## Oyunlar
 
@@ -44,20 +60,34 @@ npx playwright install chromium
 npm test
 ```
 
-Test; her oyunun soru üreticisini yüzlerce kez çalıştırıp cevapların geçerli olduğunu kontrol eder, ardından 50 oyunun hepsini açıp rastgele oynatarak hata arar.
+Test; karşılama ekranından başlayıp tüm ekranları gezer, her oyunun soru üreticisini yüzlerce kez çalıştırıp cevapların geçerli olduğunu kontrol eder, ardından 50 oyunun hepsini açıp rastgele oynatarak hata arar.
 
 ## Proje yapısı
 
 ```
 src/
-  index.html          Sayfa iskeleti
-  css/style.css       Tüm stiller
-  js/core.js          Yardımcılar, oyun kaydı, ana sayfa, quiz ve tur motorları
-  js/words.js         Türkçe kelime listeleri
-  js/games/*.js       Kategori başına bir dosya
-  js/main.js          Uygulamayı başlatır
-tests/smoke.mjs       Otomatik test
+  index.html            Sayfa iskeleti
+  privacy.html          Gizlilik politikası
+  manifest.webmanifest  PWA tanımı
+  sw.js                 Çevrimdışı önbellek
+  css/                  Stiller ve yerel font tanımları
+  fonts/                Unbounded, Manrope, JetBrains Mono (woff2)
+  icons/                Uygulama simgeleri
+  js/core.js            Durum, ses, oyun kaydı, quiz ve tur motorları
+  js/ui.js              Ekranlar ve yönlendirici
+  js/words.js           Türkçe kelime listeleri
+  js/games/*.js         Kategori başına bir dosya
+  js/main.js            Başlatma, servis çalışanı, Android geri tuşu
+scripts/                Önbellek listesi ve ekran görüntüsü üreticileri
+store/                  Mağaza simgesi, öne çıkan görsel, ekran görüntüleri
+docs/MAGAZA.md          App Store / Google Play yükleme rehberi ve mağaza metinleri
+tests/smoke.mjs         Otomatik test
+capacitor.config.json   Yerel uygulama kabuğu ayarları
 ```
+
+## Mağazalara yükleme
+
+Adım adım rehber ve hazır mağaza metinleri: **[docs/MAGAZA.md](docs/MAGAZA.md)**
 
 ## Yeni oyun eklemek
 
